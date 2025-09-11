@@ -18,11 +18,11 @@ on:
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
         required: true
-        default: '<aks_name>'
+        default: 'clusterweek08'
       aks_resource_group:
         description: 'Resource Group of the AKS Cluster'
         required: true
-        default: '<<resource_group_name>'
+        default: 'week08-resource-group'
 
   workflow_call:
     inputs:
@@ -56,7 +56,7 @@ jobs:
 
       # Login to Azure Container Registry (ACR)
       - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+        run: az acr login --name ${{ secrets.ACR_NAME }}
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
@@ -73,8 +73,8 @@ jobs:
       # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
+          docker build -t ${{ secrets.ACR_NAME }}/frontend:latest ./frontend/
+          docker push ${{ secrets.ACR_NAME }}/frontend:latest
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
