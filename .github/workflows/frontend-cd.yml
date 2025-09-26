@@ -1,4 +1,4 @@
-# .github/workflows/frontend-cd.ymls
+# .github/workflows/frontend-cd.yml
 name: CD — Deploy Frontend (AKS, no IP injection)
 
 on:

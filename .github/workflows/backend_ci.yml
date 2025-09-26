@@ -1,4 +1,4 @@
-# .github/workflows/backend_ci.ymls
+# .github/workflows/backend_ci.yml
 name: Backend CI — Build & Push (matrix, SHA tags)
 
 on:
