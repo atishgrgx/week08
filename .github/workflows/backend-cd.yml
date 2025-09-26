@@ -1,4 +1,4 @@
-# .github/workflows/backend-cd.ymlS
+# .github/workflows/backend-cd.yml
 name: CD — Deploy Backend (AKS, rollout checks)
 
 on:
