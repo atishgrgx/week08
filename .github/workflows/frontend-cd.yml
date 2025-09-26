@@ -1,93 +1,72 @@
-# week08/.github/workflows/frontend-cd.yml
+# .github/workflows/frontend-cd.yml
+name: CD — Deploy Frontend (AKS, no IP injection)
 
-name: CD - Deploy Frontend to AKS
-
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
+  push:
+    branches: ["main"]
+    paths:
+      - "k8s/**"
+      - ".github/workflows/frontend-cd.yml"
   workflow_dispatch:
     inputs:
-      product_api_ip:
-        description: 'External IP of Product Service'
-        required: true
-        default: 'http://4.198.121.135:8000'
-      order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
-        required: true
-        default: 'http://4.198.105.129:8001'
       aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
+        description: "AKS cluster name"
         required: true
-        default: 'clusterweek08'
+        default: "clusterweek08"
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
+        description: "AKS resource group"
         required: true
-        default: 'week08-resource-group'
+        default: "week08-resource-group"
 
-  workflow_call:
-    inputs:
-      product_api_ip:
-        required: true
-        type: string
-      order_api_ip:
-        required: true
-        type: string
-      aks_cluster_name:
-        required: true
-        type: string
-      aks_resource_group:
-        required: true
-        type: string
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  NAMESPACE: week08
+  PRODUCT_API_URL: http://product-service:8000
+  ORDER_API_URL: http://order-service:8000
 
 jobs:
-  deploy_frontend:
+  deploy:
     runs-on: ubuntu-latest
-    environment: Production
+    environment: production
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.ACR_NAME }}
-
-      - name: Inject Backend IPs into Frontend main.js
+      - name: Get AKS credentials
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
-          # Display the modified file content for debugging
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
+          az aks get-credentials \
+            --resource-group "${{ github.event.inputs.aks_resource_group || 'week08-resource-group' }}" \
+            --name "${{ github.event.inputs.aks_cluster_name || 'clusterweek08' }}" \
+            --overwrite-existing
 
-      # Build and Push Docker image for Frontend
-      - name: Build and Push Frontend Image
+      - name: Create namespace (idempotent)
+        run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
+
+      - name: Apply frontend manifests
         run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest
+          # If your Deployment reads env from ConfigMap/Secret, apply those first.
+          # kubectl apply -f k8s/config/
+          kubectl apply -f k8s/frontend/
 
-      - name: Set Kubernetes context (get AKS credentials)
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
-
-      - name: Deploy Frontend to AKS
+      # Temporary helper: patch env on the Deployment if you aren't using a ConfigMap yet
+      - name: Patch env for API URLs
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          kubectl set env deploy/frontend \
+            \
+            PRODUCT_API_URL=${{ env.PRODUCT_API_URL }} \
+            ORDER_API_URL=${{ env.ORDER_API_URL }}
 
-      - name: Logout from Azure (AKS deployment)
-        run: az logout
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deploy/frontend --timeout=120s

@@ -1,53 +1,65 @@
-# week08/.github/workflows/frontend_ci.yml
-
-name: Frontend CI - Build & Push Image
+# .github/workflows/frontend_ci.yml
+name: Frontend CI — Build & Push (SHA tags)
 
 on:
-  # Manual trigger
+  push:
+    branches: ["**"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend_ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend_ci.yml"
   workflow_dispatch:
 
-  # Automatically on pushes to main branch
-  push:
-    branches:
-      - main
-    paths: # Only trigger if changes are in the frontend directory
-      - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
+permissions:
+  id-token: write
+  contents: read
 
-# Define global environment variables that can be used across jobs
 env:
-  # ACR Login Server (e.g., myregistry.azurecr.io)
-  # This needs to be set as a GitHub Repository Secret
-  # ACR_LOGIN_SERVER: ${{ secrets.AZURE_LOGIN_SERVER }}
-  # Dynamically generate image tags based on Git SHA and GitHub Run ID
-  # This provides unique, traceable tags for each image build
-  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }} # e.g. myregistry.azurecr.io
+  ACR_NAME: ${{ secrets.ACR_NAME }}
 
 jobs:
-  build_and_push_frontend:
+  build_and_push:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Azure login using a Service Principal secret
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # Login to Azure Container Registry (ACR)
-    - name: Login to Azure Container Registry
-      run: az acr login --name ${{ secrets.ACR_NAME }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    # Build and Push Docker image for Frontend
-    - name: Build and Push Frontend Image
-      run: |
-        docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
-        docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest
+      - name: ACR login via az
+        run: az acr login --name ${{ env.ACR_NAME }}
 
-    # Logout from Azure for security (runs even if image push fails)
-    - name: Logout from Azure
-      run: az logout
-      if: always()
+      - name: Cache npm (frontend)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: npm-
+
+      - name: Build & push Frontend image (SHA tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout
