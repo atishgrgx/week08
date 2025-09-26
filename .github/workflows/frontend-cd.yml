@@ -56,17 +56,17 @@ jobs:
       - name: Apply frontend manifests
         run: |
           # If your Deployment reads env from ConfigMap/Secret, apply those first.
-          # kubectl apply -f k8s/config/
-          kubectl apply -f k8s/frontend/
+          # kubectl apply -n $NAMESPACE -f k8s/config/
+          kubectl apply -n $NAMESPACE -f k8s/frontend/
 
       # Temporary helper: patch env on the Deployment if you aren't using a ConfigMap yet
       - name: Patch env for API URLs
         run: |
           kubectl set env deploy/frontend \
-            \
+            -n $NAMESPACE \
             PRODUCT_API_URL=${{ env.PRODUCT_API_URL }} \
             ORDER_API_URL=${{ env.ORDER_API_URL }}
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deploy/frontend --timeout=120s
+          kubectl rollout status deploy/frontend -n $NAMESPACE --timeout=120s

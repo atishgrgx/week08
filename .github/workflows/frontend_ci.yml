@@ -1,4 +1,4 @@
-# .github/workflows/frontend_ci.yml
+# .github/workflows/frontend_ci.ymls
 name: Frontend CI — Build & Push (SHA tags)
 
 on:
